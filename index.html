@@ -26,11 +26,11 @@
       font-weight: bold;
       color: #007bff;
     }
-    #dashboard {
+    #dashboard, #averagesDashboard {
       display: none;
       margin-top: 20px;
     }
-    #dashboardContent {
+    #dashboardContent, #averagesContent {
       display: flex;
       flex-wrap: wrap;
       gap: 20px;
@@ -64,11 +64,19 @@
 
   <div id="loading">Loading data, please wait...</div>
 
+  <!-- Change for Selected Period -->
   <div id="dashboard">
-    <h3>Summary for Selected Period</h3>
+    <h3>Change for Selected Period</h3>
     <div id="dashboardContent"></div>
   </div>
 
+  <!-- Averages for Selected Period -->
+  <div id="averagesDashboard">
+    <h3>Averages for Selected Period</h3>
+    <div id="averagesContent"></div>
+  </div>
+
+  <!-- Charts -->
   <div class="chart-container">
     <h3>Temperature (°F)</h3>
     <canvas id="tempChart"></canvas>
@@ -92,7 +100,7 @@
   <script>
     let tempChart, rainRateChart, windSpeedChart, windDirChart;
 
-    // ✅ Your API keys and MAC address
+    // ✅ Your API keys and device MAC
     const API_KEY = '57b86526cfce40a7a09feff5df294feed5e5edcc28a24970a420500a2409acb4';
     const APP_KEY = '8df966e6952f410794c5904318c7f27c7834a485b62647c79a3975fd53ec998f';
     const DEVICE_MAC = '98:CD:AC:22:05:EF';
@@ -109,6 +117,7 @@
 
       loadingDiv.style.display = 'block';
       document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('averagesDashboard').style.display = 'none';
 
       try {
         const endDateISO = new Date(endDateTime).toISOString();
@@ -137,7 +146,7 @@
         const rainTotal = filtered.map(d => d.totalrainin || d.rainin || d.dailyrainin || 0).reverse();
         const baro = filtered.map(d => d.baromrelin || d.baromabsin).reverse();
 
-        // ✅ Dashboard: same metrics
+        // === Dashboard: Change for Selected Period ===
         const deltaTemp = (temps[temps.length - 1] - temps[0]).toFixed(2);
         const totalRain = (rainTotal[rainTotal.length - 1] - rainTotal[0]).toFixed(2);
         const deltaBaro = (baro[baro.length - 1] - baro[0]).toFixed(2);
@@ -156,12 +165,35 @@
         document.getElementById('dashboardContent').innerHTML = dashboardHtml;
         document.getElementById('dashboard').style.display = 'block';
 
+        // === Dashboard: Averages for Selected Period ===
+        const avgTemp = (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(2);
+        const avgWindSpeed = (windSpeed.reduce((a, b) => a + b, 0) / windSpeed.length).toFixed(2);
+        const avgWindDir = (windDir.reduce((a, b) => a + b, 0) / windDir.length).toFixed(2);
+        const avgBaro = (baro.reduce((a, b) => a + b, 0) / baro.length).toFixed(2);
+
+        const averagesHtml = `
+          <div class="card">
+            <strong>Average Temperature (°F):</strong><br>${avgTemp}
+          </div>
+          <div class="card">
+            <strong>Average Wind Speed (mph):</strong><br>${avgWindSpeed}
+          </div>
+          <div class="card">
+            <strong>Average Wind Direction (°):</strong><br>${avgWindDir}
+          </div>
+          <div class="card">
+            <strong>Average Barometric Pressure (inHg):</strong><br>${avgBaro}
+          </div>
+        `;
+        document.getElementById('averagesContent').innerHTML = averagesHtml;
+        document.getElementById('averagesDashboard').style.display = 'block';
+
         // ✅ Destroy old charts if any
         [tempChart, rainRateChart, windSpeedChart, windDirChart].forEach(chart => {
           if (chart) chart.destroy();
         });
 
-        // ✅ Create new charts
+        // ✅ Create updated charts
         tempChart = new Chart(
           document.getElementById('tempChart').getContext('2d'),
           createChartConfig(labels, temps, 'Temperature (°F)', 'red')
