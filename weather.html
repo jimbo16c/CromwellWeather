@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ambient Weather Dashboard & Charts</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 960px;
+      margin: auto;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    #loading {
+      display: none;
+      margin-top: 15px;
+      font-weight: bold;
+      color: #007bff;
+    }
+    #dashboard {
+      display: none;
+      margin-top: 20px;
+    }
+    #dashboardContent {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .card {
+      flex: 1;
+      min-width: 180px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    .chart-container {
+      margin-top: 30px;
+    }
+    canvas {
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Ambient Weather Dashboard & Charts</h2>
+
+  <label>Start Date & Time:
+    <input type="datetime-local" id="startDateTime">
+  </label>
+  <label>End Date & Time:
+    <input type="datetime-local" id="endDateTime">
+  </label>
+  <button id="fetchBtn">Import Weather Data</button>
+
+  <div id="loading">Loading data, please wait...</div>
+
+  <div id="dashboard">
+    <h3>Summary for Selected Period</h3>
+    <div id="dashboardContent"></div>
+  </div>
+
+  <div class="chart-container">
+    <h3>Temperature (°F)</h3>
+    <canvas id="tempChart"></canvas>
+  </div>
+
+  <div class="chart-container">
+    <h3>Rainfall Rate (in/hr)</h3>
+    <canvas id="rainRateChart"></canvas>
+  </div>
+
+  <div class="chart-container">
+    <h3>Wind Speed (mph)</h3>
+    <canvas id="windSpeedChart"></canvas>
+  </div>
+
+  <div class="chart-container">
+    <h3>Wind Direction (°)</h3>
+    <canvas id="windDirChart"></canvas>
+  </div>
+
+  <script>
+    let tempChart, rainRateChart, windSpeedChart, windDirChart;
+
+    // ✅ Your API keys and MAC address
+    const API_KEY = '57b86526cfce40a7a09feff5df294feed5e5edcc28a24970a420500a2409acb4';
+    const APP_KEY = '8df966e6952f410794c5904318c7f27c7834a485b62647c79a3975fd53ec998f';
+    const DEVICE_MAC = '98:CD:AC:22:05:EF';
+
+    document.getElementById('fetchBtn').addEventListener('click', async () => {
+      const startDateTime = document.getElementById('startDateTime').value;
+      const endDateTime = document.getElementById('endDateTime').value;
+      const loadingDiv = document.getElementById('loading');
+
+      if (!startDateTime || !endDateTime) {
+        alert("Please select both start and end date/time.");
+        return;
+      }
+
+      loadingDiv.style.display = 'block';
+      document.getElementById('dashboard').style.display = 'none';
+
+      try {
+        const endDateISO = new Date(endDateTime).toISOString();
+        const limit = 288;
+
+        const url = `https://api.ambientweather.net/v1/devices/${DEVICE_MAC}?apiKey=${API_KEY}&applicationKey=${APP_KEY}&limit=${limit}&endDate=${encodeURIComponent(endDateISO)}`;
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`API error: ${response.status}`);
+        const data = await response.json();
+
+        const startMs = new Date(startDateTime).getTime();
+        const endMs = new Date(endDateTime).getTime();
+
+        const filtered = data.filter(d => {
+          const t = new Date(d.date).getTime();
+          return t >= startMs && t <= endMs;
+        });
+
+        // ✅ Extract & reverse for chronological order
+        const labels = filtered.map(d => new Date(d.date).toLocaleString()).reverse();
+        const temps = filtered.map(d => d.tempf).reverse();
+        const rainRate = filtered.map(d => d.hourlyrainin).reverse();
+        const windSpeed = filtered.map(d => d.windspeedmph).reverse();
+        const windDir = filtered.map(d => d.winddir).reverse();
+        const rainTotal = filtered.map(d => d.totalrainin || d.rainin || d.dailyrainin || 0).reverse();
+        const baro = filtered.map(d => d.baromrelin || d.baromabsin).reverse();
+
+        // ✅ Dashboard: same metrics
+        const deltaTemp = (temps[temps.length - 1] - temps[0]).toFixed(2);
+        const totalRain = (rainTotal[rainTotal.length - 1] - rainTotal[0]).toFixed(2);
+        const deltaBaro = (baro[baro.length - 1] - baro[0]).toFixed(2);
+
+        const dashboardHtml = `
+          <div class="card">
+            <strong>Temperature Change (°F):</strong><br>${deltaTemp}
+          </div>
+          <div class="card">
+            <strong>Total Rainfall (in):</strong><br>${totalRain}
+          </div>
+          <div class="card">
+            <strong>Barometric Pressure Change (inHg):</strong><br>${deltaBaro}
+          </div>
+        `;
+        document.getElementById('dashboardContent').innerHTML = dashboardHtml;
+        document.getElementById('dashboard').style.display = 'block';
+
+        // ✅ Destroy old charts if any
+        [tempChart, rainRateChart, windSpeedChart, windDirChart].forEach(chart => {
+          if (chart) chart.destroy();
+        });
+
+        // ✅ Create new charts
+        tempChart = new Chart(
+          document.getElementById('tempChart').getContext('2d'),
+          createChartConfig(labels, temps, 'Temperature (°F)', 'red')
+        );
+
+        rainRateChart = new Chart(
+          document.getElementById('rainRateChart').getContext('2d'),
+          createChartConfig(labels, rainRate, 'Rainfall Rate (in/hr)', 'blue')
+        );
+
+        windSpeedChart = new Chart(
+          document.getElementById('windSpeedChart').getContext('2d'),
+          createChartConfig(labels, windSpeed, 'Wind Speed (mph)', 'green')
+        );
+
+        windDirChart = new Chart(
+          document.getElementById('windDirChart').getContext('2d'),
+          createChartConfig(labels, windDir, 'Wind Direction (°)', 'orange')
+        );
+
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+      } finally {
+        loadingDiv.style.display = 'none';
+      }
+    });
+
+    function createChartConfig(labels, data, label, color) {
+      return {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: label,
+            data: data,
+            borderColor: color,
+            fill: false,
+            tension: 0.2
+          }]
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          animation: {
+            duration: 2000
+          },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              display: true,
+              title: { display: true, text: 'Time' }
+            },
+            y: {
+              display: true,
+              title: { display: true, text: label }
+            }
+          }
+        }
+      };
+    }
+  </script>
+
+</body>
+</html>
